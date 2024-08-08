@@ -1,0 +1,18 @@
+Source: initscripts-openrc
+Section: misc
+Priority: important
+Maintainer: Uri Herrera <uri_herrera@nxos.org>
+Build-Depends: debhelper (>=9)
+Standards-Version: 3.9.6
+Homepage: http://nxos.org
+
+
+Package: initscripts-openrc
+Architecture: all
+Depends: ${shlibs:Depends}, ${misc:Depends}, openrc
+Replaces: initscripts
+Conflicts: systemd, systemd-sysv
+Description: scripts for initializing and shutting down the system
+ This package will add the scripts that initscripts provides but compatible
+ with OpenRC in Nitrux.
+

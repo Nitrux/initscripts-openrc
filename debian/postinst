@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+# -- Add service to runlevel.
+
+rc-update add 
+
+# -- Update services list.
+
+rc-update -u

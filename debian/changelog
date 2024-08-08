@@ -1,0 +1,5 @@
+initscripts-openrc (0.0.1)  nitrux; urgency=medium
+
+  * Create package.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Thu, 08 Aug 2024 14:29:00 -0500
