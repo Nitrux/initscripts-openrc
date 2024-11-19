@@ -1,0 +1,140 @@
+#!/usr/bin/env sh
+
+#############################################################################################################################################################################
+#   The license used for this file and its contents is: BSD-3-Clause                                                                                                        #
+#                                                                                                                                                                           #
+#   Copyright <2024> <Uri Herrera <uri_herrera@nxos.org>>                                                                                                                   #
+#                                                                                                                                                                           #
+#   Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions are met:                          #
+#                                                                                                                                                                           #
+#    1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.                                        #
+#                                                                                                                                                                           #
+#    2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer                                      #
+#       in the documentation and/or other materials provided with the distribution.                                                                                         #
+#                                                                                                                                                                           #
+#    3. Neither the name of the copyright holder nor the names of its contributors may be used to endorse or promote products derived from this software                    #
+#       without specific prior written permission.                                                                                                                          #
+#                                                                                                                                                                           #
+#    THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,                      #
+#    THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS                  #
+#    BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE                 #
+#    GOODS OR SERVICES; LOSS OF USE, DATA,   OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,                      #
+#    STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.   #
+#############################################################################################################################################################################
+
+
+# -- Exit on errors.
+
+set -e
+
+
+# -- Exit if running on a systemd-based system to avoid conflicts.
+
+if [ -d /run/systemd/system ]; then
+    systemctl list-jobs | grep -q network.target && exit 0
+fi
+
+
+PATH=/sbin:/bin
+
+# shellcheck source=/dev/null
+. /lib/init/vars.sh
+# shellcheck source=/dev/null
+. /lib/lsb/init-functions
+# shellcheck source=/dev/null
+. /lib/init/mount-functions.sh
+
+
+start_nfs=no
+NETFS=""
+NETDEV=""
+
+set_env() {
+
+    for file in $(fstab_files); do
+        [ -f "$file" ] || continue
+        while IFS=' ' read -r DEV _ FSTYPE OPTS _; do
+
+            case "$DEV" in ""|\#*) continue ;; esac
+            
+            case "$OPTS" in
+                *noauto*) continue ;;
+                *_netdev*) NETDEV=yes ;;
+            esac
+
+			case ",$OPTS," in
+				*,sec=krb5,*) start_nfs=yes ;;
+				*,sec=krb5i,*) start_nfs=yes ;;
+				*,sec=krb5p,*) start_nfs=yes ;;
+			esac
+
+            
+            case "$FSTYPE" in
+                nfs|nfs4)
+                    [ "$FSTYPE" = "nfs4" ] && start_nfs=yes
+                    case "$OPTS" in
+                        *nolock*) ;;
+                        *) start_nfs=yes ;;
+                    esac
+                    ;;
+                smbfs|cifs|ceph|coda|ncp|ncpfs) ;;
+                *) FSTYPE="" ;;
+            esac
+
+            [ -n "$FSTYPE" ] && case ",$NETFS," in
+                *,$FSTYPE,*) ;;
+                *) NETFS="${NETFS:+$NETFS,}$FSTYPE" ;;
+            esac
+        done < "$file"
+    done
+}
+
+do_start() {
+    [ "$start_nfs" = "yes" ] && {
+        [ -x /etc/init.d/portmap ] && /etc/init.d/portmap start
+        [ -x /etc/init.d/rpcbind ] && /etc/init.d/rpcbind start
+        /etc/init.d/nfs-common start
+    }
+    pre_mountall
+    [ -n "$NETFS" ] && mount -a -t "$NETFS"
+    [ "$NETDEV" = "yes" ] && mount -a -O _netdev
+    post_mountall
+}
+
+exit_unless_last_interface() {
+    for iface in $(ifquery --list | grep -v "^lo$"); do
+        if ! ifquery --state "$iface" >/dev/null; then
+            log_warning_msg "Waiting for interface $iface before mounting network file systems"
+            exit 0
+        fi
+    done
+}
+
+
+# -- Mount network file systems listed in /etc/fstab after the network is up.
+
+set_env
+
+[ "$start_nfs" = "no" ] && [ -z "$NETFS" ] && [ -z "$NETDEV" ] && exit 0
+
+: "${IFACE:=}"
+
+if [ "$ASYNCMOUNTNFS" != "no" ]; then
+    [ "$IFACE" != "lo" ] || exit 0
+    [ "$ADDRFAM" = "inet" ] || [ "$ADDRFAM" = "inet6" ] || exit 0
+
+    mkdir -p /var/run/network || true
+
+    exit_unless_last_interface
+
+    if mkdir /var/run/network/mountnfs 2>/dev/null; then
+        trap 'rmdir /var/run/network/mountnfs 2>/dev/null || true' EXIT
+        do_start
+    else
+        log_failure_msg "Lock /var/run/network/mountnfs exists, not mounting"
+        [ -x /usr/bin/logger ] && logger -t "if-up.d/mountnfs[$IFACE]" "Lock exists, not mounting"
+        exit 0
+    fi
+fi
+
+[ "$FROMINITD" = "yes" ] && do_start
