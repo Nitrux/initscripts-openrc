@@ -62,13 +62,12 @@ set_env() {
                 *_netdev*) NETDEV=yes ;;
             esac
 
-			case ",$OPTS," in
-				*,sec=krb5,*) start_nfs=yes ;;
-				*,sec=krb5i,*) start_nfs=yes ;;
-				*,sec=krb5p,*) start_nfs=yes ;;
-			esac
+            case ",$OPTS," in
+                *,sec=krb5,*) start_nfs=yes ;;
+                *,sec=krb5i,*) start_nfs=yes ;;
+                *,sec=krb5p,*) start_nfs=yes ;;
+            esac
 
-            
             case "$FSTYPE" in
                 nfs|nfs4)
                     [ "$FSTYPE" = "nfs4" ] && start_nfs=yes
