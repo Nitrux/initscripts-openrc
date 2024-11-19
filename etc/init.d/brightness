@@ -1,0 +1,110 @@
+#!/sbin/openrc-run
+
+description="Save and restore brightness level between restarts."
+
+SAVEFILE_PREFIX="/var/lib/initscripts/brightness"
+
+depend() {
+    need localmount
+    after bootmisc
+}
+
+start() {
+    ebegin "Restoring brightness levels"
+    restore_brightness
+    eend $?
+}
+
+stop() {
+    ebegin "Saving brightness levels"
+    save_brightness
+    eend $?
+}
+
+status() {
+    ebegin "Checking brightness levels"
+    check_brightness
+    eend $?
+}
+
+restore_brightness() {
+    local rv=0 rc
+    # ACPI (without explicit label)
+    handle_brightness '' \
+        /sys/class/backlight/acpi_video0/brightness \
+        /sys/class/backlight/acpi_video0/max_brightness start
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    # Intel
+    handle_brightness intel \
+        /sys/class/backlight/intel_backlight/brightness \
+        /sys/class/backlight/intel_backlight/max_brightness start
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    # could insert others using the same scheme here
+    return $rv
+}
+
+save_brightness() {
+    local rv=0 rc
+    # ACPI (without explicit label)
+    handle_brightness '' \
+        /sys/class/backlight/acpi_video0/brightness \
+        /sys/class/backlight/acpi_video0/max_brightness stop
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    # Intel
+    handle_brightness intel \
+        /sys/class/backlight/intel_backlight/brightness \
+        /sys/class/backlight/intel_backlight/max_brightness stop
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    return $rv
+}
+
+check_brightness() {
+    local rv=0 rc
+    # ACPI (without explicit label)
+    handle_brightness '' \
+        /sys/class/backlight/acpi_video0/brightness \
+        /sys/class/backlight/acpi_video0/max_brightness status
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    # Intel
+    handle_brightness intel \
+        /sys/class/backlight/intel_backlight/brightness \
+        /sys/class/backlight/intel_backlight/max_brightness status
+    rc=$?
+    test $rc -lt $rv || rv=$rc
+    return $rv
+}
+
+handle_brightness() {
+    local label=$1 knob=$2 max=$3 action=$4
+    local file="${SAVEFILE_PREFIX}${label:+.$label}"
+    test -e "$knob" || return 0
+
+    case "$action" in
+        start)
+            if test -f "$file"; then
+                cat "$file" >"$knob"
+            else
+                cat "$max" >"$knob"
+            fi
+            ;;
+        stop)
+            # If the backlight is off, don't save to avoid blank display after reboot.
+            test "$(cat $knob)" -eq 0 && return 0
+            cat "$knob" >"$file"
+            ;;
+        status)
+            local msg="Current${label:+ $label} brightness level is $(cat "$knob")"
+            if test -f "$file"; then
+                einfo "$msg, saved value is $(cat "$file")"
+            else
+                ewarn "$msg, there is no saved value"
+            fi
+            ;;
+    esac
+    return $?
+}

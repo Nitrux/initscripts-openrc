@@ -1,0 +1,29 @@
+#!/sbin/openrc-run
+
+description="Mount configfs kernel virtual file system if the 'configfs' module is loaded."
+
+depend() {
+    after modules
+    need localmount
+    before sysinit
+}
+
+start() {
+    ebegin "Mounting configfs kernel virtual file system"
+    local mountpoint="/sys/kernel/config"
+
+    # This directory exists only if the "configfs" module was loaded by the "modules" script.
+    if [ -d "${mountpoint}" ] && ! mountpoint -q "${mountpoint}"; then
+        mount -t configfs configfs "${mountpoint}"
+        eend $?
+    else
+        einfo "${mountpoint} is not available or already mounted."
+        return 0
+    fi
+}
+
+stop() {
+    # No specific stop operations needed because unmounting configfs is generally not required
+    # on system shutdown and can cause issues if still in use.
+    return 0
+}

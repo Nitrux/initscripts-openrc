@@ -1,0 +1,49 @@
+#!/sbin/openrc-run
+
+description="Clean temporary filesystems after the root filesystem has been mounted"
+
+depend() {
+    need checkroot
+    before bootmisc
+}
+
+start_pre() {
+    # Ensure that the script only runs during the boot phase
+    if [ "${RC_RUNLEVEL}" != "boot" ]; then
+        einfo "checkroot-bootclean only runs at boot."
+        return 1
+    fi
+}
+
+start() {
+    ebegin "Cleaning temporary filesystems"
+
+    # Remove the .clean files to force initial cleaning.
+    # This allows cleaning of directories that may be masked by mounts.
+    rm -f /tmp/.clean /run/.clean /run/lock/.clean
+
+    # Perform cleaning operations similar to the ones found in bootclean.sh
+    # Since we cannot directly source /lib/init/bootclean.sh, reimplement necessary parts here.
+    clean_dir /tmp
+    clean_dir /run
+    clean_dir /run/lock
+
+    eend $?
+}
+
+# Function to clean directories, removing old files and ensuring proper permissions.
+clean_dir() {
+    local dir=$1
+    find "${dir}" -mindepth 1 -delete
+    chmod 1777 "${dir}" 2>/dev/null
+}
+
+stop() {
+    # No stop actions needed for cleaning script
+    return 0
+}
+
+status() {
+    # This type of script does not have a status
+    return 0
+}

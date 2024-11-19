@@ -1,0 +1,44 @@
+#!/sbin/openrc-run
+
+description="Miscellaneous things to be done during bootup"
+
+depend() {
+    need localmount
+    after mountnfs-bootclean
+}
+
+start_pre() {
+    # If login delaying is enabled then create the flag file
+    # which prevents logins before startup is complete
+    if [ "${DELAYLOGIN}" = "yes" ]; then
+        echo "System bootup in progress - please wait" > /run/nologin
+    fi
+}
+
+start() {
+    ebegin "Performing miscellaneous bootup tasks"
+
+    # Remove bootclean's flag files.
+    # Don't run bootclean again after this!
+    rm -f /tmp/.clean /run/.clean /run/lock/.clean
+    rm -f /tmp/.tmpfs /run/.tmpfs /run/lock/.tmpfs
+
+    # Reset /var/run/utmp
+    local utmp='/var/run/utmp'
+    : > "${utmp}" && chgrp utmp "${utmp}" && chmod 664 "${utmp}"
+    if [ -x /sbin/restorecon ]; then
+        /sbin/restorecon "${utmp}"
+    fi
+    
+    eend $?
+}
+
+stop() {
+    # No operation needed on stop
+    return 0
+}
+
+status() {
+    # No operation needed for status as it does not have a persistent process
+    return 0
+}

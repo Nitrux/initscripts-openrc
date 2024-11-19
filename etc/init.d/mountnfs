@@ -1,0 +1,74 @@
+#!/sbin/openrc-run
+
+description="Wait for network file systems to be mounted"
+
+depend() {
+    need localmount
+    use netmount
+    after net
+}
+
+start() {
+    ebegin "Waiting for network file systems to be mounted"
+    
+    if [ "${ASYNCMOUNTNFS}" != "no" ]; then
+        do_wait_async_mount
+    else
+        FROMINITD=yes /etc/network/if-up.d/mountnfs
+    fi
+
+    eend $?
+}
+
+do_wait_async_mount() {
+    local waitnfs=""
+    local TIMEOUT=900
+
+    for file in $(fstab_files); do
+        if [ -f "$file" ]; then
+            while read -r DEV MTPT FSTYPE OPTS REST; do
+                case "$DEV" in
+                    ""|\#*)
+                        continue
+                        ;;
+                esac
+                case "$OPTS" in
+                    noauto|*,noauto|noauto,*|*,noauto,*)
+                        continue
+                        ;;
+                esac
+                case "$FSTYPE" in
+                    nfs|nfs4|smbfs|cifs|coda|ncp|ncpfs|ceph)
+                        ;;
+                    *)
+                        continue
+                        ;;
+                esac
+                case "$MTPT" in
+                    /usr/local|/usr/local/*)
+                        ;;
+                    /usr|/usr/*|/var|/var/*)
+                        waitnfs="$waitnfs $MTPT"
+                        ;;
+                esac
+            done < "$file"
+        fi
+    done
+
+    for mountpt in $waitnfs; do
+        ebegin "Waiting for $mountpt"
+
+        while ! mountpoint -q "$mountpt"; do
+            sleep 0.1
+            TIMEOUT=$(( TIMEOUT - 1 ))
+            if [ $TIMEOUT -le 0 ]; then
+                eend 1
+                break
+            fi
+        done
+
+        if [ $TIMEOUT -gt 0 ]; then
+            eend 0
+        fi
+    done
+}

@@ -1,0 +1,46 @@
+#!/sbin/openrc-run
+
+description="Mount initial set of virtual filesystems provided by the kernel"
+
+depend() {
+    # No specific dependencies needed based on the original SysV script
+}
+
+start() {
+    ebegin "Mounting kernel virtual filesystems"
+    mount_filesystems mount_noupdate
+    eend $?
+}
+
+stop() {
+    # Typically, these filesystems are not unmounted on stop
+    return 0
+}
+
+mount_filesystems() {
+    MNTMODE="$1"
+
+    # Mount /proc
+    domount "$MNTMODE" proc "" /proc proc "-onodev,noexec,nosuid"
+
+    # Mount /sys if sysfs is supported
+    if grep -E -qs "sysfs\$" /proc/filesystems; then
+        domount "$MNTMODE" sysfs "" /sys sysfs "-onodev,noexec,nosuid"
+    fi
+
+    # Mount securityfs if available
+    if grep -E -qs "securityfs\$" /proc/filesystems; then
+        domount "$MNTMODE" securityfs "" /sys/kernel/security securityfs
+    fi
+
+    # Mount pstore if the directory exists
+    if [ -d /sys/fs/pstore ]; then
+        domount "$MNTMODE" pstore "" /sys/fs/pstore pstore ""
+    fi
+
+    # Mount efivarfs if the directory exists and the system uses UEFI
+    efivarsmnt=/sys/firmware/efi/efivars
+    if [ -d "$efivarsmnt" ]; then
+        domount "$MNTMODE" efivarfs "" "$efivarsmnt" efivarfs ""
+    fi
+}
