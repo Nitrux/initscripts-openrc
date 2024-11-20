@@ -1,76 +1,69 @@
 #!/sbin/openrc-run
 
-description="Mount all filesystems."
+description="Mount all filesystems as specified in /etc/fstab"
 
 # Define dependencies
 depend() {
     need checkfs
     need checkroot-bootclean
-    after checkfs
-    after checkroot-bootclean
+    before bootmisc
 }
 
 # Configuration variables with default values (can be set in /etc/conf.d/mountall)
 : ${VERBOSE:=no}
 : ${NOSWAP:=no}
 
-start_pre() {
-    # Set LANG from /etc/default/locale if available
-    if [ -r /etc/default/locale ]; then
-        . /etc/default/locale
-        export LANG
-    fi
-}
-
-start() {
-    # Remove mountclean's flag files silently
-    rm -f /tmp/.clean /run/.clean /run/lock/.clean
-    rm -f /tmp/.tmpfs /run/.tmpfs /run/lock/.tmpfs
-
+# Function to mount all local filesystems excluding specified types
+mount_all_local() {
     # Remount /usr if it's already mounted (may have been read-only)
     if mountpoint -q /usr; then
         mount -o remount /usr || ewarn "Failed to remount /usr"
     fi
 
-    # Mount all file systems with specific types and options
-    mount -a -t nonfs,nfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev || ewarn "Failed to mount some file systems"
+    # Mount all local filesystems with specific types and options
+    mount -a -t noafs,nofs,norpc_pipefs,nonfs,nfs4,nonfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev || ewarn "Failed to mount some file systems"
+}
 
-    # Create /var/log/fsck directory if it doesn't exist
-    mkdir -p /var/log/fsck
+# Function to remount tmpfs filesystems if they are already mounted
+remount_tmpfs() {
+    local mountpoint="$1"
+    if mountpoint -q "${mountpoint}"; then
+        mount -o remount "${mountpoint}" || ewarn "Failed to remount ${mountpoint}"
+    fi
+}
 
-    # Handle /run/initctl if sysvinit is installed
-    INITCTL="/run/initctl"
-    if [ ! -p "$INITCTL" ] && [ -f "/usr/share/sysvinit/update-rc.d" ]; then
-        rm -f "$INITCTL"
-        mknod -m 600 "$INITCTL" p || ewarn "Failed to create $INITCTL"
-        PID="$(pidof -s /sbin/init || echo 1)"
-        if [ -n "$PID" ] && [ "$PID" -ne 1 ]; then
-            kill -s USR1 "$PID" || ewarn "Failed to send USR1 signal to init"
-        fi
+start() {
+    # Mount all local filesystems
+    mount_all_local
+
+    # Ensure /var/log/fsck exists for fsck logs
+    if [ ! -d /var/log/fsck ]; then
+        mkdir -p /var/log/fsck || ewarn "Failed to create /var/log/fsck"
+        chmod 755 /var/log/fsck || ewarn "Failed to set permissions on /var/log/fsck"
     fi
 
-    # Activate swapfile swap, if any
-    if [ "$NOSWAP" = yes ]; then
-        [ "$VERBOSE" = no ] || ewarn "Not activating swap as requested via bootoption noswap."
-    else
-        if [ "$VERBOSE" = no ]; then
-            swapon -a -e 2>/dev/null || :
+    # Activate swap devices if NOSWAP is not enabled
+    if [ "$NOSWAP" != "yes" ]; then
+        if [ "$VERBOSE" = "yes" ]; then
+            swapon -a -e -v || ewarn "Failed to activate swap devices"
         else
-            swapon -a -e -v || ewarn "Failed to activate swapfile swap"
+            swapon -a -e 2>/dev/null || :
         fi
+    else
+        [ "$VERBOSE" = "no" ] || ewarn "Swap activation skipped due to 'noswap' boot parameter"
     fi
 
-    # Remount tmpfs filesystems with updated VM settings
-    mount_run mount_noupdate
-    mount_lock mount_noupdate
-    mount_shm mount_noupdate
+    # Remount tmpfs filesystems to adjust size limits after swap activation
+    remount_tmpfs "/run"
+    remount_tmpfs "/run/lock"
+    remount_tmpfs "/dev/shm"
+    remount_tmpfs "/tmp"
 
-    # Mount /tmp if required
-    mount_tmp mount_noupdate
+    return 0
 }
 
 stop() {
-    # No operation on stop
+    # No stop action needed
     return 0
 }
 
