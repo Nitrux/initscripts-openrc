@@ -1,0 +1,4 @@
+# /etc/conf.d/checkfs
+FSCKFIX="yes"
+FSCKTYPES="xfs,f2fs"
+VERBOSE="no"

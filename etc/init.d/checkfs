@@ -1,0 +1,106 @@
+#!/sbin/openrc-run
+
+description="Check all filesystems."
+
+# Define dependencies
+depend() {
+    need mountall
+    after mountnfs-bootclean
+}
+
+# Configuration variables with default values
+: ${FSCK_LOGFILE:=/var/log/fsck/checkfs}
+: ${FSCKFIX:=no}
+: ${FSCKTYPES:=}
+: ${VERBOSE:=no}
+
+start() {
+    # Trap SIGINT to prevent fsck interruption
+    trap "" INT
+
+    # Check if fastboot is active
+    if is_fastboot_active; then
+        ewarn "Fast boot enabled, skipping file system check."
+        return 0
+    fi
+
+    # Determine if fsck should be run
+    if [ "$FSCKTYPES" != "none" ]; then
+        # Determine force option
+        if [ -f /forcefsck ] || grep -q -s -w -i "forcefsck" /proc/cmdline; then
+            force="-f"
+        else
+            force=""
+        fi
+
+        # Determine fix option
+        if [ "$FSCKFIX" = "yes" ]; then
+            fix="-y"
+        else
+            fix="-a"
+        fi
+
+        # Determine spinner based on TERM
+        case "$TERM" in
+            dumb|network|unknown|"")
+                spinner=""
+                ;;
+            *)
+                spinner="-C"
+                ;;
+        esac
+
+        # Handle s390x architecture
+        if [ "$(uname -m)" = "s390x" ]; then
+            spinner=""
+        fi
+
+        # Set FSCKTYPES options
+        if [ -n "$FSCKTYPES" ]; then
+            FSCKTYPES_OPT="-t $FSCKTYPES"
+        else
+            FSCKTYPES_OPT=""
+        fi
+
+        # Function to handle failed fsck
+        handle_failed_fsck() {
+            eerror "File system check failed. Log saved in ${FSCK_LOGFILE}."
+            sulogin --force "$CONSOLE" || ewarn "Failed to start maintenance shell."
+            sleep 5
+        }
+
+        # Run fsck
+        if [ "$VERBOSE" = "no" ]; then
+            fsck $spinner -T -M -A $fix $force $FSCKTYPES_OPT > "$FSCK_LOGFILE" 2>&1
+            FSCKCODE=$?
+            if [ "$FSCKCODE" -gt 1 ]; then
+                handle_failed_fsck
+                return 1
+            fi
+        else
+            fsck $spinner -V -T -M -A $fix $force $FSCKTYPES_OPT | tee "$FSCK_LOGFILE"
+            FSCKCODE=$?
+            if [ "$FSCKCODE" -gt 1 ]; then
+                handle_failed_fsck
+                return 1
+            fi
+        fi
+    fi
+
+    # Clean up flags
+    rm -f /fastboot /forcefsck 2>/dev/null
+}
+
+stop() {
+    # No operation on stop
+    return 0
+}
+
+status() {
+    # Check if fsck log file exists
+    if [ -f "$FSCK_LOGFILE" ]; then
+        return 0
+    else
+        return 1
+    fi
+}

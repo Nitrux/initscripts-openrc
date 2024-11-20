@@ -4,7 +4,7 @@ description="Miscellaneous tasks to be done during bootup."
 
 # Define dependencies
 depend() {
-    need localmount
+    need mountall
     after mountnfs-bootclean
 }
 
