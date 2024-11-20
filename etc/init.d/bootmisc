@@ -2,27 +2,22 @@
 
 description="Miscellaneous tasks to be done during bootup."
 
-# Define dependencies
 depend() {
     need mountall
 }
 
-# Environment variables with default values
 : ${DELAYLOGIN:=yes}
 
 start_pre() {
-    # If DELAYLOGIN is enabled, create the /run/nologin file
     if echo "${DELAYLOGIN}" | grep -iq "^y"; then
         echo "System bootup in progress - please wait" > /run/nologin || eerror "Failed to create /run/nologin"
     fi
 }
 
 start() {
-    # Remove bootclean's flag files silently
     rm -f /tmp/.clean /run/.clean /run/lock/.clean
     rm -f /tmp/.tmpfs /run/.tmpfs /run/lock/.tmpfs
 
-    # Reset /var/run/utmp
     local utmp='/var/run/utmp'
     if : > "${utmp}"; then
         chgrp utmp "${utmp}" || ewarn "Failed to chgrp ${utmp}"
@@ -35,14 +30,12 @@ start() {
 }
 
 stop() {
-    # If DELAYLOGIN is enabled, remove the /run/nologin file
     if echo "${DELAYLOGIN}" | grep -iq "^y"; then
         rm -f /run/nologin || ewarn "Failed to remove /run/nologin"
     fi
 }
 
 status() {
-    # Return status based on the presence of /run/nologin
     if [ -f /run/nologin ]; then
         return 0
     else

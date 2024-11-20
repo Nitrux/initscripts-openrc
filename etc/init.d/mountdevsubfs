@@ -3,45 +3,24 @@
 description="Mount special file systems under /dev"
 
 depend() {
-    need mountkernfs
-    after udev
-    before keyboard-setup
+    after mountkernfs
+    before eudev
 }
 
 start() {
-    ebegin "Mounting special filesystems under /dev"
-    mount_filesystems mount_noupdate
-    eend $?
-}
+    ebegin "Mounting special file systems under /dev"
 
-stop() {
-    # Typically, these filesystems are not unmounted on stop
-    return 0
-}
+    [ ! -h /dev/fd ] && [ ! -d /dev/fd ] && ln -s /proc/self/fd /dev/fd
+    [ ! -h /dev/stdin ] && ln -s fd/0 /dev/stdin
+    [ ! -h /dev/stdout ] && ln -s fd/1 /dev/stdout
+    [ ! -h /dev/stderr ] && ln -s fd/2 /dev/stderr
 
-mount_filesystems() {
-    MNTMODE="$1"
+    mount -t tmpfs tmpfs /run/shm || return 1
 
-    # Ensure standard I/O nodes are present
-    trylink() {
-        test -h "/dev/$1" || test -d "/dev/$1" || ln -s -- "$2" "/dev/$1" || {
-            eerror "Unable to ensure link /dev/$1 -> $2"
-            ls -lad "/dev/$1"
-        } >&2
-    }
-
-    trylink fd /proc/self/fd
-    trylink stdin fd/0
-    trylink stdout fd/1
-    trylink stderr fd/2
-
-    # Mount /dev/pts
     if [ "$(uname -s)" = "Linux" ]; then
-        [ ! -d /dev/pts ] && mkdir --mode=755 /dev/pts
-        [ -x /sbin/restorecon ] && /sbin/restorecon /dev/pts
-        domount "$MNTMODE" devpts "" /dev/pts devpts "-onoexec,nosuid,gid=$TTYGRP,mode=$TTYMODE"
+        [ ! -d /dev/pts ] && mkdir -m 755 /dev/pts
+        mount -t devpts -o noexec,nosuid,gid=5,mode=620 devpts /dev/pts || return 1
     fi
-}
 
-# Read defaults for TTYGRP and TTYMODE
-[ -f /etc/default/devpts ] && . /etc/default/devpts
+    eend 0
+}

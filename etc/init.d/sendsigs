@@ -1,0 +1,61 @@
+#!/sbin/openrc-run
+
+description="Kill all remaining processes"
+
+depend() {
+    after umountnfs
+}
+
+stop() {
+    ebegin "Terminating remaining processes"
+
+    local OMITPIDS=""
+
+    for omitfile in /run/sendsigs.omit; do
+        if [ -e "$omitfile" ]; then
+            for pid in $(cat "$omitfile"); do
+                OMITPIDS="${OMITPIDS:+$OMITPIDS }-o $pid"
+            done
+        fi
+    done
+
+    for omitdir in /run/sendsigs.omit.d; do
+        if [ -d "$omitdir" ]; then
+            for pidfile in "$omitdir"/*; do
+                [ -f "$pidfile" ] || continue
+                for pid in $(cat "$pidfile"); do
+                    OMITPIDS="${OMITPIDS:+$OMITPIDS }-o $pid"
+                done
+            done
+        fi
+    done
+
+    sync
+
+    einfo "Asking all remaining processes to terminate"
+    killall5 -15 $OMITPIDS
+    sleep 1
+
+    local alldead=""
+    for seq in {1..10}; do
+        if killall5 -18 $OMITPIDS; then
+            sleep 1
+        else
+            alldead=1
+            break
+        fi
+    done
+
+    if [ -z "$alldead" ]; then
+        ewarn "Some processes are unkillable:"
+        if command -v pstree > /dev/null; then
+            pstree
+        elif command -v ps > /dev/null; then
+            ps -ef
+        fi
+        einfo "Forcing termination of remaining processes"
+        killall5 -9 $OMITPIDS
+    fi
+
+    eend 0
+}

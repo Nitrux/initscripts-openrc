@@ -2,38 +2,31 @@
 
 description="Check all filesystems."
 
-# Define dependencies
 depend() {
     before mountall
 }
 
-# Configuration variables with default values (can be set in /etc/conf.d/checkfs)
 : ${FSCK_LOGFILE:=/var/log/fsck/checkfs}
 : ${FSCKFIX:=no}
 : ${FSCKTYPES:=}
 : ${VERBOSE:=no}
 
 start() {
-    # Trap SIGINT to prevent fsck interruption
     trap "" INT
 
-    # Determine if fsck should be run
     if [ "$FSCKTYPES" != "none" ]; then
-        # Determine force option
         if [ -f /forcefsck ] || grep -q -s -w -i "forcefsck" /proc/cmdline; then
             force="-f"
         else
             force=""
         fi
 
-        # Determine fix option
         if [ "$FSCKFIX" = "yes" ]; then
             fix="-y"
         else
             fix="-a"
         fi
 
-        # Determine spinner based on TERM
         case "$TERM" in
             dumb|network|unknown|"")
                 spinner=""
@@ -43,19 +36,16 @@ start() {
                 ;;
         esac
 
-        # Handle s390x architecture
         if [ "$(uname -m)" = "s390x" ]; then
             spinner=""
         fi
 
-        # Set FSCKTYPES options
         if [ -n "$FSCKTYPES" ]; then
             FSCKTYPES_OPT="-t $FSCKTYPES"
         else
             FSCKTYPES_OPT=""
         fi
 
-        # Function to handle failed fsck
         handle_failed_fsck() {
             eerror "File system check failed. Log saved in ${FSCK_LOGFILE}."
             sulogin --force "$CONSOLE" || ewarn "Failed to start maintenance shell."
@@ -80,17 +70,14 @@ start() {
         fi
     fi
 
-    # Clean up flags
     rm -f /fastboot /forcefsck 2>/dev/null
 }
 
 stop() {
-    # No operation on stop
     return 0
 }
 
 status() {
-    # Check if fsck log file exists
     if [ -f "$FSCK_LOGFILE" ]; then
         return 0
     else

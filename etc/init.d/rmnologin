@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+
+description="Remove /run/nologin at boot if DELAYLOGIN=yes"
+
+depend() {
+    after mountall
+}
+
+start() {
+    ebegin "Removing /run/nologin if DELAYLOGIN is enabled"
+    case "${DELAYLOGIN:-yes}" in
+        Y*|y*)
+            rm -f /run/nologin
+            ;;
+    esac
+    eend 0
+}
+
+status() {
+    if [ ! -f /run/nologin ]; then
+        return 0
+    else
+        return 4
+    fi
+}

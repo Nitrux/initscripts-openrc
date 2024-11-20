@@ -1,25 +1,17 @@
 #!/sbin/openrc-run
 
-description="Mount configfs kernel virtual file system if the 'configfs' module is loaded."
+description="Mount configfs kernel virtual file system"
 
 depend() {
-    after localmount
+    after mountkernfs
+    before kmod
 }
 
 start() {
     ebegin "Mounting configfs kernel virtual file system"
     local mountpoint="/sys/kernel/config"
-
-    # Ensure /sys/kernel/config exists and configfs is not already mounted
-    if [ -d "${mountpoint}" ] && ! mountpoint -q "${mountpoint}"; then
-        mount -t configfs configfs "${mountpoint}"
-        eend $?
-    else
-        eend 0 "configfs is already mounted or not available."
+    if [ -d "${mountpoint}" ] && ! findmnt "${mountpoint}" >/dev/null; then
+        mount none -t configfs "${mountpoint}" || eend 1
     fi
-}
-
-stop() {
-    # No specific stop operations needed; unmounting configfs is generally unnecessary
-    return 0
+    eend 0
 }

@@ -1,45 +1,33 @@
 #!/sbin/openrc-run
 
 description="Save and restore random seed between restarts"
-SAVEDFILE="/var/lib/urandom/random-seed"
-POOLBYTES=$(($(cat /proc/sys/kernel/random/poolsize 2>/dev/null) + 7) / 8 || echo 512)
 
 depend() {
-    need localmount
-    after bootmisc
+    after mountall
 }
+
+SAVEDFILE=/var/lib/urandom/random-seed
+POOLBYTES=$(($(cat /proc/sys/kernel/random/poolsize 2>/dev/null || echo 4096) / 8))
 
 start() {
     ebegin "Initializing random number generator"
-    if [ -c /dev/urandom ]; then
-        (
-            date +%s.%N
+    (
+        date +%s.%N
+        [ -f "$SAVEDFILE" ] && cat "$SAVEDFILE"
+    ) >/dev/urandom
 
-            if [ -f "$SAVEDFILE" ]; then
-                cat "$SAVEDFILE"
-            fi
-        ) >/dev/urandom
-
-        umask 077
-        dd if=/dev/urandom of=$SAVEDFILE bs=$POOLBYTES count=1 >/dev/null 2>&1
-        umask 022
-    fi
+    umask 077
+    dd if=/dev/urandom of="$SAVEDFILE" bs="$POOLBYTES" count=1 >/dev/null 2>&1
     eend $?
 }
 
 stop() {
     ebegin "Saving random seed"
-    if [ -c /dev/urandom ]; then
-        umask 077
-        dd if=/dev/urandom of=$SAVEDFILE bs=$POOLBYTES count=1 >/dev/null 2>&1
-    fi
+    umask 077
+    dd if=/dev/urandom of="$SAVEDFILE" bs="$POOLBYTES" count=1 >/dev/null 2>&1
     eend $?
 }
 
 status() {
-    if [ -f "$SAVEDFILE" ]; then
-        return 0
-    else
-        return 4
-    fi
+    [ -f "$SAVEDFILE" ]
 }

@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+
+description="Mount the root and /usr filesystems read-only"
+
+depend() {
+    need mountall
+}
+
+remount_ro() {
+    mount -n -o remount,ro -t dummytype dummydev "$1" 2>/dev/null || \
+    mount -n -o remount,ro dummydev "$1" 2>/dev/null || \
+    mount -n -o remount,ro "$1"
+}
+
+stop() {
+    ebegin "Remounting root filesystem read-only"
+    remount_ro /
+    eend $?
+
+    if mountpoint -q /usr; then
+        ebegin "Remounting /usr filesystem read-only"
+        remount_ro /usr
+        eend $?
+    fi
+}

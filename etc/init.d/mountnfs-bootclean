@@ -1,0 +1,14 @@
+#!/sbin/openrc-run
+
+description="Clean temporary filesystems after network filesystems have been mounted"
+
+depend() {
+    after mountnfs localmount
+    before bootmisc
+}
+
+start() {
+    ebegin "Cleaning temporary filesystems after network file systems mount"
+    /lib/init/bootclean.sh
+    eend $?
+}

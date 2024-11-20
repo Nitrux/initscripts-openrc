@@ -1,82 +1,15 @@
 #!/sbin/openrc-run
 
-description="Clean temporary filesystems after the root filesystem has been mounted"
+description="Clean temporary filesystems after the root filesystem is mounted"
 
 depend() {
-    need checkroot
+    after checkroot
     before bootmisc
-}
-
-start_pre() {
-    # Ensure that the script only runs during the boot phase
-    if [ "${RC_RUNLEVEL}" != "boot" ]; then
-        einfo "checkroot-bootclean only runs at boot."
-        return 1
-    fi
 }
 
 start() {
     ebegin "Cleaning temporary filesystems"
-
-    # Remove the .clean files to force initial cleaning.
     rm -f /tmp/.clean /run/.clean /run/lock/.clean
-
-    # Reimplement cleaning operations based on /lib/init/bootclean.sh
-    clean_all
-
+    /lib/init/bootclean.sh
     eend $?
-}
-
-# Function to clean all necessary directories
-clean_all() {
-    # Clean /tmp
-    bootclean /tmp
-
-    # Clean /var/tmp
-    bootclean /var/tmp
-
-    # Clean /run
-    bootclean /run
-
-    # Clean /run/lock
-    bootclean /run/lock
-}
-
-# Function to clean a directory while preserving essential files
-bootclean() {
-    local dir="$1"
-    if [ ! -d "$dir" ]; then
-        return 0
-    fi
-
-    # Create a .clean file if it doesn't exist
-    [ -f "$dir/.clean" ] || touch "$dir/.clean"
-
-    # Only clean if the .clean file exists
-    if [ -f "$dir/.clean" ]; then
-        # Remove everything except for certain files/directories
-        find "$dir" -xdev \
-            \( ! -name '.' ! -name '..' \) \
-            \( \
-                ! -name '.X11-unix' \
-                ! -name '.ICE-unix' \
-                ! -name '.XIM-unix' \
-                ! -name '.font-unix' \
-                ! -name 'lost+found' \
-                ! -name '.clean' \
-            \) -exec rm -rf -- '{}' + 2>/dev/null
-
-        # Set appropriate permissions
-        chmod 1777 "$dir" 2>/dev/null
-    fi
-}
-
-stop() {
-    # No stop actions needed for this script
-    return 0
-}
-
-status() {
-    # This script does not have a status to report
-    return 0
 }

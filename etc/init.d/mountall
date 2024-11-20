@@ -2,29 +2,23 @@
 
 description="Mount all filesystems as specified in /etc/fstab"
 
-# Define dependencies
 depend() {
     need checkfs
     need checkroot-bootclean
     before bootmisc
 }
 
-# Configuration variables with default values (can be set in /etc/conf.d/mountall)
 : ${VERBOSE:=no}
 : ${NOSWAP:=no}
 
-# Function to mount all local filesystems excluding specified types
 mount_all_local() {
-    # Remount /usr if it's already mounted (may have been read-only)
     if mountpoint -q /usr; then
         mount -o remount /usr || ewarn "Failed to remount /usr"
     fi
 
-    # Mount all local filesystems with specific types and options
     mount -a -t noafs,nofs,norpc_pipefs,nonfs,nfs4,nonfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev || ewarn "Failed to mount some file systems"
 }
 
-# Function to remount tmpfs filesystems if they are already mounted
 remount_tmpfs() {
     local mountpoint="$1"
     if mountpoint -q "${mountpoint}"; then
@@ -33,16 +27,13 @@ remount_tmpfs() {
 }
 
 start() {
-    # Mount all local filesystems
     mount_all_local
 
-    # Ensure /var/log/fsck exists for fsck logs
     if [ ! -d /var/log/fsck ]; then
         mkdir -p /var/log/fsck || ewarn "Failed to create /var/log/fsck"
         chmod 755 /var/log/fsck || ewarn "Failed to set permissions on /var/log/fsck"
     fi
 
-    # Activate swap devices if NOSWAP is not enabled
     if [ "$NOSWAP" != "yes" ]; then
         if [ "$VERBOSE" = "yes" ]; then
             swapon -a -e -v || ewarn "Failed to activate swap devices"
@@ -53,7 +44,6 @@ start() {
         [ "$VERBOSE" = "no" ] || ewarn "Swap activation skipped due to 'noswap' boot parameter"
     fi
 
-    # Remount tmpfs filesystems to adjust size limits after swap activation
     remount_tmpfs "/run"
     remount_tmpfs "/run/lock"
     remount_tmpfs "/dev/shm"
@@ -63,12 +53,10 @@ start() {
 }
 
 stop() {
-    # No stop action needed
     return 0
 }
 
 status() {
-    # Check if /var/log/fsck exists as an indicator of mountall's execution
     if [ -d /var/log/fsck ]; then
         return 0
     else

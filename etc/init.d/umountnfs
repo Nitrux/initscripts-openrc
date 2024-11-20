@@ -1,0 +1,47 @@
+#!/sbin/openrc-run
+
+description="Unmount all network and non-toplevel virtual filesystems"
+
+depend() {
+    after umountfs
+}
+
+stop() {
+    ebegin "Unmounting network and non-toplevel virtual filesystems"
+
+    local FLAGS=""
+    local DIRS=""
+    case "$(uname -s):$(uname -r)" in
+        Linux:[01].*|Linux:2.[01].*) FLAGS="" ;;
+        Linux:2.[23].*|Linux:2.4.?|Linux:2.4.?-*|Linux:2.4.10|Linux:2.4.10-*) FLAGS="-f" ;;
+        *) FLAGS="-f -l" ;;
+    esac
+
+    halt -w
+    rm -f /tmp/.clean /run/.clean /run/lock/.clean
+
+    while read -r DEV MTPT FSTYPE OPTS REST; do
+        case "$MTPT" in
+            /|/proc|/dev|/dev/pts|/dev/shm|/proc/*|/sys|/run|/run/*) continue ;;
+        esac
+        case "$FSTYPE" in
+            nfs|nfs4|smbfs|ncp|ncpfs|cifs|coda|ceph|proc|procfs|linprocfs|devpts|usbfs|usbdevfs|sysfs)
+                DIRS="$MTPT $DIRS"
+                ;;
+        esac
+        case "$OPTS" in
+            _netdev|*,_netdev|_netdev,*|*,_netdev,*)
+                case "$FSTYPE" in
+                    ocfs2|gfs) ;;
+                    *) DIRS="$MTPT $DIRS" ;;
+                esac
+                ;;
+        esac
+    done < /etc/mtab
+
+    if [ -n "$DIRS" ]; then
+        umount $FLAGS $DIRS
+    fi
+
+    eend 0
+}

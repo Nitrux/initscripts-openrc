@@ -1,3 +1,9 @@
+initscripts-openrc (0.0.3)  nitrux; urgency=medium
+
+  * Add service files.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Wed, 20 Nov 2024 07:11:00 -0500
+
 initscripts-openrc (0.0.2)  nitrux; urgency=medium
 
   * Add files to /etc/default.

@@ -14,14 +14,10 @@ start() {
 }
 
 stop() {
-    # No operation needed on stop
     return 0
 }
 
 clean_temp_dirs() {
-    # Clean /tmp, /var/lock, /var/run
-    # This script assumes you have proper mechanisms to handle the cleaning process.
-    # Replace the following with whatever specific cleaning actions are required.
     find /tmp /var/lock /var/run -mindepth 1 -delete
 }
 
