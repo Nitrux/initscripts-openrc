@@ -1,0 +1,83 @@
+#!/sbin/openrc-run
+
+provide localmount
+
+description="Mount all filesystems as specified in /etc/fstab"
+
+depend() {
+    need checkfs
+    need checkroot-bootclean
+    before bootmisc
+}
+
+
+mount_all_local() {
+    # Mount local filesystems excluding network and special filesystems
+    mount -a -t noafs,nofs,norpc_pipefs,nonfs,nfs4,nonfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev
+}
+
+remount_tmpfs() {
+    local mountpoint="$1"
+    if mountpoint -q "${mountpoint}"; then
+        ebegin "Remounting ${mountpoint}"
+        mount -o remount "${mountpoint}"
+        eend $?
+    fi
+}
+
+handle_initctl() {
+    local INITCTL="/run/initctl"
+    local SYSVINIT_UPDATE_RC="/usr/share/sysvinit/update-rc.d"
+    if [ ! -p "$INITCTL" ] && [ -f "$SYSVINIT_UPDATE_RC" ]; then
+        ebegin "Recreating $INITCTL as a FIFO"
+        rm -f "$INITCTL"
+        mknod -m 600 "$INITCTL" p
+        eend $?
+
+        # Reopen control channel
+        local PID
+        PID="$(pidof -s /sbin/init || echo 1)"
+        if [ -n "$PID" ]; then
+            ebegin "Signaling init process"
+            kill -s USR1 "$PID"
+            eend $?
+        fi
+    fi
+}
+
+start() {
+    ebegin "Mounting all local filesystems"
+    mount_all_local
+    eend $?
+
+    # Ensure /var/log/fsck exists for fsck logs
+    if [ ! -d /var/log/fsck ]; then
+        mkdir -p /var/log/fsck
+        chmod 755 /var/log/fsck
+    fi
+
+    # Activate swap devices if necessary
+    if ! grep -qw "noswap" /proc/cmdline; then
+        ebegin "Activating swap devices"
+        swapon -a -e 2>/dev/null || :
+        eend $?
+    else
+        ewarn "Swap activation skipped due to 'noswap' boot parameter"
+    fi
+
+    # Remount tmpfs filesystems to adjust size limits after swap activation
+    remount_tmpfs "/run"
+    remount_tmpfs "/run/lock"
+    remount_tmpfs "/dev/shm"
+    remount_tmpfs "/tmp"
+
+    # Handle /run/initctl if necessary
+    handle_initctl
+
+    eend 0
+}
+
+stop() {
+    # No stop action needed
+    return 0
+}
