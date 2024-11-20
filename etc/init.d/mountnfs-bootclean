@@ -3,12 +3,24 @@
 description="Clean temporary filesystems after network filesystems have been mounted"
 
 depend() {
-    after mountnfs localmount
+    after mountnfs mountall
     before bootmisc
 }
 
+clean_all() {
+    which find >/dev/null 2>&1 || return 0
+    ebegin "Cleaning up temporary files"
+    local ES=0
+    clean_tmp || ES=1
+    clean /run "! -xtype d ! -name utmp ! -name innd.pid" || ES=1
+    clean /run/lock "! -type d" || ES=1
+    clean /run/shm "! -type d" || ES=1
+    eend $ES
+    return $ES
+}
+
 start() {
-    ebegin "Cleaning temporary filesystems after network file systems mount"
-    /lib/init/bootclean.sh
+    ebegin "Cleaning temporary filesystems after network file systems are mounted"
+    clean_all
     eend $?
 }

@@ -3,21 +3,28 @@
 description="Clean temporary filesystems after all local filesystems have been mounted."
 
 depend() {
-    need localmount
+    need mountall
     before bootmisc
+}
+
+clean_all() {
+    which find >/dev/null 2>&1 || return 0
+    ebegin "Cleaning up temporary files"
+    local ES=0
+    clean_tmp || ES=1
+    clean /run "! -xtype d ! -name utmp ! -name innd.pid" || ES=1
+    clean /run/lock "! -type d" || ES=1
+    clean /run/shm "! -type d" || ES=1
+    eend $ES
+    return $ES
 }
 
 start() {
     ebegin "Cleaning /tmp, /var/lock, and /var/run"
-    clean_temp_dirs
+    clean_all
     eend $?
 }
 
 stop() {
     return 0
 }
-
-clean_temp_dirs() {
-    find /tmp /var/lock /var/run -mindepth 1 -delete
-}
-
