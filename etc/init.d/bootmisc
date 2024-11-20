@@ -1,49 +1,52 @@
 #!/sbin/openrc-run
 
-description="Miscellaneous things to be done during bootup"
+description="Miscellaneous tasks to be done during bootup."
 
+# Define dependencies
 depend() {
     need localmount
     after mountnfs-bootclean
 }
 
+# Environment variables with default values
+: ${DELAYLOGIN:=yes}
+
 start_pre() {
-    # Set default value for DELAYLOGIN
-    : ${DELAYLOGIN:=yes}
-    # If login delaying is enabled then create the flag file
-    case "${DELAYLOGIN}" in
-      [Yy]*)
-        echo "System bootup in progress - please wait" > /run/nologin
-        ;;
-    esac
+    # If DELAYLOGIN is enabled, create the /run/nologin file
+    if echo "${DELAYLOGIN}" | grep -iq "^y"; then
+        echo "System bootup in progress - please wait" > /run/nologin || eerror "Failed to create /run/nologin"
+    fi
 }
 
 start() {
-    ebegin "Performing miscellaneous bootup tasks"
-
-    # Remove bootclean's flag files.
+    # Remove bootclean's flag files silently
     rm -f /tmp/.clean /run/.clean /run/lock/.clean
     rm -f /tmp/.tmpfs /run/.tmpfs /run/lock/.tmpfs
 
     # Reset /var/run/utmp
     local utmp='/var/run/utmp'
     if : > "${utmp}"; then
-        chgrp utmp "${utmp}" || ewarn "failed to chgrp ${utmp}"
-        chmod 664 "${utmp}" || ewarn "failed to chmod ${utmp}"
-        [ -x /sbin/restorecon ] && /sbin/restorecon "${utmp}"
+        chgrp utmp "${utmp}" || ewarn "Failed to chgrp ${utmp}"
+        chmod 664 "${utmp}" || ewarn "Failed to chmod ${utmp}"
+        [ -x /sbin/restorecon ] && /sbin/restorecon "${utmp}" || ewarn "Failed to restorecon ${utmp}"
     else
-        eerror "failed to truncate ${utmp}"
-        eend 1
+        eerror "Failed to truncate ${utmp}"
         return 1
     fi
-
-    eend 0
 }
 
 stop() {
-    return 0
+    # If DELAYLOGIN is enabled, remove the /run/nologin file
+    if echo "${DELAYLOGIN}" | grep -iq "^y"; then
+        rm -f /run/nologin || ewarn "Failed to remove /run/nologin"
+    fi
 }
 
 status() {
-    return 0
+    # Return status based on the presence of /run/nologin
+    if [ -f /run/nologin ]; then
+        return 0
+    else
+        return 1
+    fi
 }
