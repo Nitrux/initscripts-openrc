@@ -1,83 +1,84 @@
 #!/sbin/openrc-run
 
-provide localmount
+description="Mount all filesystems."
 
-description="Mount all filesystems as specified in /etc/fstab"
-
+# Define dependencies
 depend() {
     need checkfs
     need checkroot-bootclean
-    before bootmisc
+    after checkfs
+    after checkroot-bootclean
 }
 
+# Configuration variables with default values (can be set in /etc/conf.d/mountall)
+: ${VERBOSE:=no}
+: ${NOSWAP:=no}
 
-mount_all_local() {
-    # Mount local filesystems excluding network and special filesystems
-    mount -a -t noafs,nofs,norpc_pipefs,nonfs,nfs4,nonfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev
-}
-
-remount_tmpfs() {
-    local mountpoint="$1"
-    if mountpoint -q "${mountpoint}"; then
-        ebegin "Remounting ${mountpoint}"
-        mount -o remount "${mountpoint}"
-        eend $?
-    fi
-}
-
-handle_initctl() {
-    local INITCTL="/run/initctl"
-    local SYSVINIT_UPDATE_RC="/usr/share/sysvinit/update-rc.d"
-    if [ ! -p "$INITCTL" ] && [ -f "$SYSVINIT_UPDATE_RC" ]; then
-        ebegin "Recreating $INITCTL as a FIFO"
-        rm -f "$INITCTL"
-        mknod -m 600 "$INITCTL" p
-        eend $?
-
-        # Reopen control channel
-        local PID
-        PID="$(pidof -s /sbin/init || echo 1)"
-        if [ -n "$PID" ]; then
-            ebegin "Signaling init process"
-            kill -s USR1 "$PID"
-            eend $?
-        fi
+start_pre() {
+    # Set LANG from /etc/default/locale if available
+    if [ -r /etc/default/locale ]; then
+        . /etc/default/locale
+        export LANG
     fi
 }
 
 start() {
-    ebegin "Mounting all local filesystems"
-    mount_all_local
-    eend $?
+    # Remove mountclean's flag files silently
+    rm -f /tmp/.clean /run/.clean /run/lock/.clean
+    rm -f /tmp/.tmpfs /run/.tmpfs /run/lock/.tmpfs
 
-    # Ensure /var/log/fsck exists for fsck logs
-    if [ ! -d /var/log/fsck ]; then
-        mkdir -p /var/log/fsck
-        chmod 755 /var/log/fsck
+    # Remount /usr if it's already mounted (may have been read-only)
+    if mountpoint -q /usr; then
+        mount -o remount /usr || ewarn "Failed to remount /usr"
     fi
 
-    # Activate swap devices if necessary
-    if ! grep -qw "noswap" /proc/cmdline; then
-        ebegin "Activating swap devices"
-        swapon -a -e 2>/dev/null || :
-        eend $?
+    # Mount all file systems with specific types and options
+    mount -a -t nonfs,nfs4,smbfs,cifs,ncp,ncpfs,coda,ocfs2,gfs,gfs2,ceph -O no_netdev || ewarn "Failed to mount some file systems"
+
+    # Create /var/log/fsck directory if it doesn't exist
+    mkdir -p /var/log/fsck
+
+    # Handle /run/initctl if sysvinit is installed
+    INITCTL="/run/initctl"
+    if [ ! -p "$INITCTL" ] && [ -f "/usr/share/sysvinit/update-rc.d" ]; then
+        rm -f "$INITCTL"
+        mknod -m 600 "$INITCTL" p || ewarn "Failed to create $INITCTL"
+        PID="$(pidof -s /sbin/init || echo 1)"
+        if [ -n "$PID" ] && [ "$PID" -ne 1 ]; then
+            kill -s USR1 "$PID" || ewarn "Failed to send USR1 signal to init"
+        fi
+    fi
+
+    # Activate swapfile swap, if any
+    if [ "$NOSWAP" = yes ]; then
+        [ "$VERBOSE" = no ] || ewarn "Not activating swap as requested via bootoption noswap."
     else
-        ewarn "Swap activation skipped due to 'noswap' boot parameter"
+        if [ "$VERBOSE" = no ]; then
+            swapon -a -e 2>/dev/null || :
+        else
+            swapon -a -e -v || ewarn "Failed to activate swapfile swap"
+        fi
     fi
 
-    # Remount tmpfs filesystems to adjust size limits after swap activation
-    remount_tmpfs "/run"
-    remount_tmpfs "/run/lock"
-    remount_tmpfs "/dev/shm"
-    remount_tmpfs "/tmp"
+    # Remount tmpfs filesystems with updated VM settings
+    mount_run mount_noupdate
+    mount_lock mount_noupdate
+    mount_shm mount_noupdate
 
-    # Handle /run/initctl if necessary
-    handle_initctl
-
-    eend 0
+    # Mount /tmp if required
+    mount_tmp mount_noupdate
 }
 
 stop() {
-    # No stop action needed
+    # No operation on stop
     return 0
+}
+
+status() {
+    # Check if /var/log/fsck exists as an indicator of mountall's execution
+    if [ -d /var/log/fsck ]; then
+        return 0
+    else
+        return 1
+    fi
 }

@@ -4,8 +4,7 @@ description="Check all filesystems."
 
 # Define dependencies
 depend() {
-    need mountall
-    after mountnfs-bootclean
+    before mountall
 }
 
 # Configuration variables with default values
