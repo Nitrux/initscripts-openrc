@@ -7,11 +7,16 @@ depend() {
     before mountall
 }
 
-# Configuration variables with default values
+# Configuration variables with default values (can be set in /etc/conf.d/checkfs)
 : ${FSCK_LOGFILE:=/var/log/fsck/checkfs}
 : ${FSCKFIX:=no}
 : ${FSCKTYPES:=}
 : ${VERBOSE:=no}
+
+# Function to check if fastboot is active
+is_fastboot_active() {
+    [ -f /fastboot ]
+}
 
 start() {
     # Trap SIGINT to prevent fsck interruption
