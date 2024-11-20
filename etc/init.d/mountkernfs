@@ -6,23 +6,83 @@ depend() {
     before mountall
 }
 
+: ${RAMSHM:=no}
+: ${RAMLOCK:=no}
+
+domount() {
+    local mntmode=$1
+    local prifstype=$2
+    local altfstype=$3
+    local mtpt=$4
+    local devname=$5
+    local caller_opts=$6
+
+    local fstype=""
+    local fs_opts=""
+    local fstab_opts=""
+
+    case "$prifstype" in
+        proc) fstype="proc" ;;
+        tmpfs) fstype="tmpfs" ;;
+        efivarfs) [ -d /sys/firmware/efi/efivars ] && fstype="efivarfs" ;;
+        *) grep -E -qs "$prifstype\$" /proc/filesystems && fstype="$prifstype" ;;
+    esac
+
+    [ -z "$fstype" ] && grep -E -qs "$altfstype\$" /proc/filesystems && fstype="$altfstype"
+    if [ -z "$fstype" ]; then
+        ewarn "Skipping mount for $prifstype (unsupported filesystem)"
+        return 0
+    fi
+
+    if [ "$mntmode" = "remount" ]; then
+        mount -o remount $caller_opts $fstab_opts $mtpt || return 1
+    else
+        mount -t $fstype $caller_opts $fstab_opts $fs_opts $devname $mtpt || return 1
+    fi
+}
+
+mount_run() {
+    local mntmode=$1
+    local runexec=""
+    [ "$RAMSHM" = "yes" ] && runexec=",noexec"
+    domount "$mntmode" tmpfs shmfs /run tmpfs "-onosuid$runexec"
+    mkdir -p --mode=755 /run/sendsigs.omit.d
+    touch /run/.tmpfs
+    [ -x /sbin/restorecon ] && /sbin/restorecon -r /run
+}
+
+mount_lock() {
+    local mntmode=$1
+    local nodev="nodev,"
+    mkdir -p --mode=755 /run/lock
+    if [ "$RAMLOCK" = "yes" ]; then
+        domount "$mntmode" tmpfs shmfs /run/lock tmpfs "-o${nodev}noexec,nosuid"
+        touch /run/lock/.tmpfs
+    else
+        chmod 755 /run/lock
+    fi
+    [ -x /sbin/restorecon ] && /sbin/restorecon /run/lock
+}
+
 start() {
     ebegin "Mounting kernel virtual file systems"
-    mount -t tmpfs tmpfs /run || return 1
-    mount -t tmpfs tmpfs /run/lock || return 1
-    mount -t proc -o nodev,noexec,nosuid proc /proc || return 1
+
+    mount_run mount_noupdate
+    mount_lock mount_noupdate
+    domount mount_noupdate proc "" /proc proc "-o nodev,noexec,nosuid"
     if grep -E -qs "securityfs\$" /proc/filesystems; then
-        mount -t securityfs securityfs /sys/kernel/security || return 1
+        domount mount_noupdate securityfs "" /sys/kernel/security securityfs
     fi
     if grep -E -qs "sysfs\$" /proc/filesystems; then
-        mount -t sysfs -o nodev,noexec,nosuid sysfs /sys || return 1
+        domount mount_noupdate sysfs "" /sys sysfs "-o nodev,noexec,nosuid"
     fi
     if [ -d /sys/fs/pstore ]; then
-        mount -t pstore pstore /sys/fs/pstore || return 1
+        domount mount_noupdate pstore "" /sys/fs/pstore pstore ""
     fi
     efivarsmnt=/sys/firmware/efi/efivars
     if [ -d "$efivarsmnt" ]; then
-        mount -t efivarfs none "$efivarsmnt" || return 1
+        domount mount_noupdate efivarfs "" "$efivarsmnt" none ""
     fi
-    eend 0
+
+    eend $?
 }
