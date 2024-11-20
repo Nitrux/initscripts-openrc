@@ -2,109 +2,165 @@
 
 description="Save and restore brightness level between restarts."
 
-SAVEFILE_PREFIX="/var/lib/initscripts/brightness"
-
+# Define dependencies
 depend() {
-    need localmount
-    after bootmisc
+    before bootmisc
 }
 
-start() {
-    ebegin "Restoring brightness levels"
-    restore_brightness
-    eend $?
-}
+# Configuration variables with default values (can be set in /etc/conf.d/brightness)
+: ${SAVEFILE_PREFIX:=/var/lib/initscripts/brightness}
+: ${VERBOSE:=no}
 
-stop() {
-    ebegin "Saving brightness levels"
-    save_brightness
-    eend $?
-}
+# List of backlight interfaces:
+# Each line contains: label knob_path max_path
+# Use ':' as the label for interfaces without a specific label
+BACKLIGHT_INTERFACES="
+: /sys/class/backlight/acpi_video0/brightness /sys/class/backlight/acpi_video0/max_brightness
+intel_backlight /sys/class/backlight/intel_backlight/brightness /sys/class/backlight/intel_backlight/max_brightness
+"
 
-status() {
-    ebegin "Checking brightness levels"
-    check_brightness
-    eend $?
-}
-
-restore_brightness() {
-    local rv=0 rc
-    # ACPI (without explicit label)
-    handle_brightness '' \
-        /sys/class/backlight/acpi_video0/brightness \
-        /sys/class/backlight/acpi_video0/max_brightness start
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    # Intel
-    handle_brightness intel \
-        /sys/class/backlight/intel_backlight/brightness \
-        /sys/class/backlight/intel_backlight/max_brightness start
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    # could insert others using the same scheme here
-    return $rv
-}
-
-save_brightness() {
-    local rv=0 rc
-    # ACPI (without explicit label)
-    handle_brightness '' \
-        /sys/class/backlight/acpi_video0/brightness \
-        /sys/class/backlight/acpi_video0/max_brightness stop
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    # Intel
-    handle_brightness intel \
-        /sys/class/backlight/intel_backlight/brightness \
-        /sys/class/backlight/intel_backlight/max_brightness stop
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    return $rv
-}
-
-check_brightness() {
-    local rv=0 rc
-    # ACPI (without explicit label)
-    handle_brightness '' \
-        /sys/class/backlight/acpi_video0/brightness \
-        /sys/class/backlight/acpi_video0/max_brightness status
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    # Intel
-    handle_brightness intel \
-        /sys/class/backlight/intel_backlight/brightness \
-        /sys/class/backlight/intel_backlight/max_brightness status
-    rc=$?
-    test $rc -lt $rv || rv=$rc
-    return $rv
-}
-
-handle_brightness() {
-    local label=$1 knob=$2 max=$3 action=$4
+# Function to handle starting brightness for an interface
+handle_start() {
+    local label="$1"
+    local knob="$2"
+    local max="$3"
     local file="${SAVEFILE_PREFIX}${label:+.$label}"
-    test -e "$knob" || return 0
 
-    case "$action" in
-        start)
-            if test -f "$file"; then
-                cat "$file" >"$knob"
-            else
-                cat "$max" >"$knob"
-            fi
-            ;;
-        stop)
-            # If the backlight is off, don't save to avoid blank display after reboot.
-            test "$(cat $knob)" -eq 0 && return 0
-            cat "$knob" >"$file"
-            ;;
-        status)
-            local msg="Current${label:+ $label} brightness level is $(cat "$knob")"
-            if test -f "$file"; then
-                einfo "$msg, saved value is $(cat "$file")"
-            else
-                ewarn "$msg, there is no saved value"
-            fi
-            ;;
-    esac
-    return $?
+    # Check if the brightness knob exists
+    if [ ! -e "$knob" ]; then
+        return 0
+    fi
+
+    # Log starting message if VERBOSE is enabled
+    if [ "$VERBOSE" = "yes" ]; then
+        ebegin "Initialising ${label:+$label }brightness level"
+    fi
+
+    # Set brightness to saved value or to maximum if no saved value exists
+    if [ -f "$file" ]; then
+        cat "$file" > "$knob"
+    else
+        cat "$max" > "$knob"
+    fi
+
+    local rv=$?
+    # Log end message if VERBOSE is enabled
+    if [ "$VERBOSE" = "yes" ]; then
+        eend $rv
+    fi
+    return $rv
+}
+
+# Function to handle stopping brightness for an interface
+handle_stop() {
+    local label="$1"
+    local knob="$2"
+    local max="$3"
+    local file="${SAVEFILE_PREFIX}${label:+.$label}"
+
+    # Check if the brightness knob exists
+    if [ ! -e "$knob" ]; then
+        return 0
+    fi
+
+    # Do not save brightness if it's turned off (to avoid blank display after reboot)
+    if [ "$(cat "$knob")" -eq 0 ]; then
+        return 0
+    fi
+
+    # Log saving message if VERBOSE is enabled
+    if [ "$VERBOSE" = "yes" ]; then
+        ebegin "Saving ${label:+$label }brightness level"
+    fi
+
+    # Save the current brightness level
+    cat "$knob" > "$file"
+    local rv=$?
+    # Log end message if VERBOSE is enabled
+    if [ "$VERBOSE" = "yes" ]; then
+        eend $rv
+    fi
+    return $rv
+}
+
+# Function to handle status for an interface
+handle_status() {
+    local label="$1"
+    local knob="$2"
+    local max="$3"
+    local file="${SAVEFILE_PREFIX}${label:+.$label}"
+
+    # Check if the brightness knob exists
+    if [ ! -e "$knob" ]; then
+        return 0
+    fi
+
+    # Retrieve current brightness level
+    local current="$(cat "$knob")"
+
+    # Prepare status message
+    local MSG="Current${label:+ $label} brightness level is $current"
+
+    # Check if a saved brightness level exists
+    if [ -f "$file" ]; then
+        local saved="$(cat "$file")"
+        log_success_msg "${MSG}, saved value is $saved"
+        return 0
+    else
+        log_failure_msg "${MSG}, there is no saved value"
+        return 4
+    fi
+}
+
+# Start function
+start() {
+    local label knob max
+
+    # Iterate over each backlight interface and initialize brightness
+    while read -r label knob max; do
+        # If label is ':', set it to an empty string
+        if [ "$label" = ":" ]; then
+            label=""
+        fi
+        handle_start "$label" "$knob" "$max"
+    done <<< "$BACKLIGHT_INTERFACES"
+
+    return 0
+}
+
+# Stop function
+stop() {
+    local label knob max
+
+    # Iterate over each backlight interface and save current brightness
+    while read -r label knob max; do
+        # If label is ':', set it to an empty string
+        if [ "$label" = ":" ]; then
+            label=""
+        fi
+        handle_stop "$label" "$knob" "$max"
+    done <<< "$BACKLIGHT_INTERFACES"
+
+    return 0
+}
+
+# Status function
+status() {
+    local label knob max
+    local overall_status=0
+
+    # Iterate over each backlight interface and report status
+    while read -r label knob max; do
+        # If label is ':', set it to an empty string
+        if [ "$label" = ":" ]; then
+            label=""
+        fi
+        handle_status "$label" "$knob" "$max"
+        # Capture overall status
+        if [ $? -ne 0 ]; then
+            overall_status=1
+        fi
+    done <<< "$BACKLIGHT_INTERFACES"
+
+    return $overall_status
 }
