@@ -1,24 +1,101 @@
 #!/sbin/openrc-run
 
-description="Check the root file system and manage root filesystem state"
+description="Check the root file system, manage root filesystem state, and activate swap"
 
 depend() {
     before mountall
     after mountdevsubfs hostname
 }
 
+read_fstab() {
+    eval "$(grep -v '^#' /etc/fstab | while read -r dev mtpt fstype opts dump pass; do
+        case "$mtpt" in
+            /)
+                echo "rootdev=\"$dev\""
+                echo "roottype=\"$fstype\""
+                echo "rootopts=\"$opts\""
+                echo "rootmode=\"rw\""
+                [ "$pass" != "0" ] && [ -n "$pass" ] && echo "rootcheck=\"yes\""
+                case "$opts" in
+                    ro|ro,*|*,ro|*,ro,*) echo "rootmode=\"ro\"" ;;
+                esac
+                ;;
+            swap)
+                [ "$fstype" = "swap" ] && echo "swap_on_lv=\"no\""
+                ;;
+        esac
+        if [[ "$dev" =~ ^(LABEL=|UUID=|PARTUUID=|PARTLABEL=) ]] && [ -x /sbin/findfs ]; then
+            dev=$(findfs "$dev") || ewarn "Failed to resolve $dev using findfs"
+        fi
+    done)"
+}
+
+handle_rootdev() {
+    local ddev rdev
+    ddev=$(findmnt -n -o SOURCE /)
+    rdev=$(findmnt -n -o SOURCE /)
+
+    if [ "$ddev" != "$rdev" ] && [ "$ddev" != "4:0" ]; then
+        if [ "$(findmnt -n -o SOURCE /dev/root)" = "4:0" ]; then
+            rootdev="/dev/root"
+        else
+            rm -f /run/rootdev
+            mknod -m 600 /run/rootdev b "${rdev%:*}" "${rdev#*:}" && [ -e /run/rootdev ] && rootdev="/run/rootdev" || rootfatal="yes"
+        fi
+    fi
+
+    if [ "$rootfatal" = "yes" ]; then
+        eerror "Critical error: The device node $rootdev is missing or incorrect, and the system failed to create a temporary node."
+        eerror "Manual intervention required. Starting a maintenance shell."
+        sulogin --force || {
+            eerror "Failed to start maintenance shell. Rebooting in 5 seconds."
+            sleep 5
+            reboot -f
+        }
+    fi
+}
+
+activate_swap() {
+    if [ "$NOSWAP" = "yes" ]; then
+        ewarn "Swap activation skipped due to 'NOSWAP=yes'."
+        return
+    fi
+
+    if [ "$swap_on_lv" = "yes" ]; then
+        ewarn "Swap activation skipped for swap on logical volume."
+        return
+    fi
+
+    if [ "$swap_on_file" = "yes" ]; then
+        ewarn "Swap activation skipped for swap files."
+        return
+    fi
+
+    ebegin "Activating swap"
+    swapon -a -e
+    eend $?
+}
+
 start() {
     ebegin "Checking root file system"
+
+    read_fstab || {
+        eerror "Failed to read /etc/fstab. Aborting."
+        return 1
+    }
+    handle_rootdev
+
     if [ -f /forcefsck ] || grep -q -s -w -i "forcefsck" /proc/cmdline; then
         force="-f"
     else
         force=""
     fi
 
-    if [ "$(findmnt -n -o FSTYPE /)" = "btrfs" ]; then
+    if [ "$roottype" = "btrfs" ]; then
         ewarn "btrfs root detected, skipping root file system check."
     else
-        fsck -T -a $force / || fsck -T -p $force /
+        mount -o remount,ro "$rootdev" / || mount -o remount,ro /
+        fsck -T -a $force "$rootdev" || fsck -T -p $force "$rootdev"
         if [ $? -gt 3 ]; then
             eerror "Root file system check failed. A manual fsck is required."
             sulogin --force || {
@@ -29,7 +106,7 @@ start() {
         fi
     fi
 
-    mount -o remount,rw / || mount -o remount,rw / || {
+    mount -o remount,rw "$rootdev" / || mount -o remount,rw / || {
         eerror "Failed to remount root file system as read-write."
         return 1
     }
@@ -38,19 +115,22 @@ start() {
         rm -f /etc/mtab && ln -s /proc/mounts /etc/mtab
     fi
 
+    activate_swap
+
+    eend $?
+
+    ebegin "Reloading mountkernfs and mountdevsubfs services"
+    if rc-service mountkernfs status; then
+        rc-service mountkernfs restart || ewarn "Failed to restart mountkernfs service"
+    fi
+    if rc-service mountdevsubfs status; then
+        rc-service mountdevsubfs restart || ewarn "Failed to restart mountdevsubfs service"
+    fi
     eend 0
 }
 
 status() {
-    rootrw=false
-    swapon=false
-    if grep -q ' / ' /proc/mounts | grep -q rw; then
-        rootrw=true
-    fi
-    if [ -f /proc/swaps ] && grep -q -v '^Filename' /proc/swaps; then
-        swapon=true
-    fi
-    if $rootrw || $swapon; then
+    if findmnt -n -o OPTIONS / | grep -q rw; then
         return 0
     else
         return 4
