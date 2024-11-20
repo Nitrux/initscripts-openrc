@@ -5,7 +5,6 @@ description="Miscellaneous tasks to be done during bootup."
 # Define dependencies
 depend() {
     need mountall
-    after mountnfs-bootclean
 }
 
 # Environment variables with default values
