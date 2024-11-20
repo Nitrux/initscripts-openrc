@@ -13,20 +13,9 @@ depend() {
 : ${FSCKTYPES:=}
 : ${VERBOSE:=no}
 
-# Function to check if fastboot is active
-is_fastboot_active() {
-    [ -f /fastboot ]
-}
-
 start() {
     # Trap SIGINT to prevent fsck interruption
     trap "" INT
-
-    # Check if fastboot is active
-    if is_fastboot_active; then
-        ewarn "Fast boot enabled, skipping file system check."
-        return 0
-    fi
 
     # Determine if fsck should be run
     if [ "$FSCKTYPES" != "none" ]; then
