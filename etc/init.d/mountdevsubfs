@@ -7,19 +7,59 @@ depend() {
     before eudev
 }
 
+domount() {
+    local mntmode=$1
+    local prifstype=$2
+    local altfstype=$3
+    local mtpt=$4
+    local devname=$5
+    local caller_opts=$6
+
+    local fstype=""
+    local fs_opts=""
+    local fstab_opts=""
+
+    case "$prifstype" in
+        proc) fstype="proc" ;;
+        tmpfs) fstype="tmpfs" ;;
+        efivarfs) [ -d /sys/firmware/efi/efivars ] && fstype="efivarfs" ;;
+        *) grep -E -qs "$prifstype\$" /proc/filesystems && fstype="$prifstype" ;;
+    esac
+
+    [ -z "$fstype" ] && grep -E -qs "$altfstype\$" /proc/filesystems && fstype="$altfstype"
+    if [ -z "$fstype" ]; then
+        ewarn "Skipping mount for $prifstype (unsupported filesystem)"
+        return 0
+    fi
+
+    if [ "$mntmode" = "remount" ]; then
+        mount -o remount $caller_opts $fstab_opts $mtpt || return 1
+    else
+        mount -t $fstype $caller_opts $fstab_opts $fs_opts $devname $mtpt || return 1
+    fi
+}
+
+mount_shm() {
+    local mntmode=$1
+    domount "$mntmode" tmpfs "" /run/shm tmpfs "-onosuid,nodev"
+    [ -d /run/shm ] || mkdir -p --mode=1777 /run/shm
+    [ -x /sbin/restorecon ] && /sbin/restorecon /run/shm
+}
+
 start() {
     ebegin "Mounting special file systems under /dev"
 
-    [ ! -h /dev/fd ] && [ ! -d /dev/fd ] && ln -s /proc/self/fd /dev/fd
-    [ ! -h /dev/stdin ] && ln -s fd/0 /dev/stdin
-    [ ! -h /dev/stdout ] && ln -s fd/1 /dev/stdout
-    [ ! -h /dev/stderr ] && ln -s fd/2 /dev/stderr
+    [ ! -h /dev/fd ] && [ ! -d /dev/fd ] && ln -s /proc/self/fd /dev/fd || ewarn "Failed to create /dev/fd"
+    [ ! -h /dev/stdin ] && ln -s fd/0 /dev/stdin || ewarn "Failed to create /dev/stdin"
+    [ ! -h /dev/stdout ] && ln -s fd/1 /dev/stdout || ewarn "Failed to create /dev/stdout"
+    [ ! -h /dev/stderr ] && ln -s fd/2 /dev/stderr || ewarn "Failed to create /dev/stderr"
 
-    mount -t tmpfs tmpfs /run/shm || return 1
+    mount_shm mount_noupdate
 
     if [ "$(uname -s)" = "Linux" ]; then
         [ ! -d /dev/pts ] && mkdir -m 755 /dev/pts
-        mount -t devpts -o noexec,nosuid,gid=5,mode=620 devpts /dev/pts || return 1
+        [ -x /sbin/restorecon ] && /sbin/restorecon /dev/pts
+        domount mount_noupdate devpts "" /dev/pts devpts "-onoexec,nosuid,gid=5,mode=620"
     fi
 
     eend 0
