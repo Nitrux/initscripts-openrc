@@ -24,9 +24,13 @@ read_fstab() {
                 [ "$fstype" = "swap" ] && echo "swap_on_lv=\"no\""
                 ;;
         esac
-        if [[ "$dev" =~ ^(LABEL=|UUID=|PARTUUID=|PARTLABEL=) ]] && [ -x /sbin/findfs ]; then
-            dev=$(findfs "$dev") || ewarn "Failed to resolve $dev using findfs"
-        fi
+        case "$dev" in
+            LABEL=*|UUID=*|PARTUUID=*|PARTLABEL=*)
+                if [ -x /sbin/findfs ]; then
+                    dev=$(findfs "$dev") || ewarn "Failed to resolve $dev using findfs"
+                fi
+                ;;
+        esac
     done)"
 }
 
