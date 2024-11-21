@@ -1,6 +1,6 @@
 #!/sbin/openrc-run
 
-description="Check for network file systems and log warnings if not mounted"
+description="Check and wait for network file systems to be mounted"
 
 depend() {
     need localmount networking
@@ -10,6 +10,9 @@ start() {
     ebegin "Checking for network file systems"
 
     local waitnfs=""
+    local ASYNCMOUNTNFS="${ASYNCMOUNTNFS:-yes}"
+    local TIMEOUT=900
+
     for file in /etc/fstab; do
         [ -f "$file" ] || continue
         while read -r DEV MTPT FSTYPE OPTS REST; do
@@ -31,11 +34,23 @@ start() {
         done < "$file"
     done
 
-    for mountpt in $waitnfs; do
-        if ! mountpoint -q "$mountpt"; then
-            ewarn "Network file system $mountpt is not mounted. Boot process continuing."
-        fi
-    done
+    if [ "$ASYNCMOUNTNFS" != "no" ]; then
+        for mountpt in $waitnfs; do
+            ebegin "Waiting for $mountpt"
+            while ! mountpoint -q "$mountpt"; do
+                sleep 0.1
+                TIMEOUT=$((TIMEOUT - 1))
+                if [ "$TIMEOUT" -le 0 ]; then
+                    ewarn "Timeout reached while waiting for $mountpt to be mounted."
+                    eend 1
+                    break
+                fi
+            done
+            eend 0
+        done
+    else
+        ewarn "ASYNCMOUNTNFS is set to 'no'. Skipping wait for network file systems."
+    fi
 
     eend 0
 }
