@@ -1,3 +1,9 @@
+initscripts-openrc (0.0.4)  nitrux; urgency=medium
+
+  * Achieve functional parity between our OpenRC init scripts and their SysV originals.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Wed, 20 Nov 2024 21:39:00 -0500
+
 initscripts-openrc (0.0.3)  nitrux; urgency=medium
 
   * Add service files.
