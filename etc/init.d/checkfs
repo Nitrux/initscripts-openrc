@@ -3,7 +3,6 @@
 description="Check all filesystems."
 
 depend() {
-    before mountall
     after cryptdisks
 }
 

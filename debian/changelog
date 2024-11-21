@@ -1,7 +1,13 @@
+initscripts-openrc (0.0.8)  nitrux; urgency=medium
+
+  * Remove dependency in checkfs.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Thu, 21 Nov 2024 16:56:00 -0500
+
 initscripts-openrc (0.0.7)  nitrux; urgency=medium
 
   * Fix wrong dependency in checkroot, mountall, checkfs.
-54
+
  -- Uri Herrera <uri_herrera@nxos.org>  Thu, 21 Nov 2024 03:45:00 -0500
 
 initscripts-openrc (0.0.6)  nitrux; urgency=medium
