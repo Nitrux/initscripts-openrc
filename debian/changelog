@@ -1,3 +1,9 @@
+initscripts-openrc (0.0.6)  nitrux; urgency=medium
+
+  * Fix wrong dependency in mountnfs.
+
+ -- Uri Herrera <uri_herrera@nxos.org>  Thu, 21 Nov 2024 03:45:00 -0500
+
 initscripts-openrc (0.0.5)  nitrux; urgency=medium
 
   * Fix syntax error in checkroot.

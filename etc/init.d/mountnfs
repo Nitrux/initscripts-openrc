@@ -3,7 +3,7 @@
 description="Check and wait for network file systems to be mounted"
 
 depend() {
-    need localmount networking
+    need mountall networking
 }
 
 start() {
