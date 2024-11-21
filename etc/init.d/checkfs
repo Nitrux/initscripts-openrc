@@ -11,8 +11,19 @@ depend() {
 : ${FSCKTYPES:=}
 : ${VERBOSE:=no}
 
+is_fastboot_active() {
+    [ -f /fastboot ] && return 0
+    grep -qw "fastboot" /proc/cmdline && return 0
+    return 1
+}
+
 start() {
     trap "" INT
+
+    if is_fastboot_active; then
+        ewarn "Fast boot mode detected, skipping filesystem check (fsck)."
+        return 0
+    fi
 
     if [ "$FSCKTYPES" != "none" ]; then
         if [ -f /forcefsck ] || grep -q -s -w -i "forcefsck" /proc/cmdline; then
@@ -52,7 +63,6 @@ start() {
             sleep 5
         }
 
-        # Run fsck
         if [ "$VERBOSE" = "no" ]; then
             fsck $spinner -T -M -A $fix $force $FSCKTYPES_OPT > "$FSCK_LOGFILE" 2>&1
             FSCKCODE=$?
