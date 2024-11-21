@@ -4,7 +4,7 @@ description="Check the root file system, manage root filesystem state, and activ
 
 depend() {
     before mountall
-    after mountdevsubfs hostname
+    after mountdevsubfs
 }
 
 read_fstab() {

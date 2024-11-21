@@ -4,6 +4,7 @@ description="Check all filesystems."
 
 depend() {
     before mountall
+    after cryptdisks
 }
 
 : ${FSCK_LOGFILE:=/var/log/fsck/checkfs}

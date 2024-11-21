@@ -3,9 +3,8 @@
 description="Mount all filesystems as specified in /etc/fstab"
 
 depend() {
-    need checkfs
-    need checkroot-bootclean
-    before bootmisc
+    need checkfs checkroot-bootclean
+    before bootmisc hostname
 }
 
 : ${VERBOSE:=no}
